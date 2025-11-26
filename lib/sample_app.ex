@@ -19,30 +19,9 @@ defmodule SampleApp do
   alias SampleApp.Clock
   alias SampleApp.Touch
 
-  # ── SPI wiring (XIAO: D8→GPIO7, D9→GPIO8, D10→GPIO9; TFT CS on GPIO43) ──────────
-  @spi_config [
-    bus_config: [sclk: 7, miso: 8, mosi: 9],
-    device_config: [
-      spi_dev_tft: [
-        cs: 43,
-        mode: 0,
-        clock_speed_hz: 20_000_000,
-        command_len_bits: 0,
-        address_len_bits: 0
-      ],
-      spi_dev_touch: [
-        cs: 44,
-        mode: 0,
-        clock_speed_hz: 1_000_000,
-        command_len_bits: 0,
-        address_len_bits: 0
-      ]
-    ]
-  ]
-
-  # Shared bus chip selects (keep HIGH when idle)
-  # D3  SD CS (GPIO4)
-  @pin_sd_cs 4
+  # ── SPI / SD wiring (compile-time from config/config.exs) ─────────────────────
+  @spi_config Application.compile_env(:sample_app, :spi_config)
+  @pin_sd_cs Application.compile_env(:sample_app, :sd_cs_pin)
 
   # SD mount
   @sd_driver ~c"sdspi"
