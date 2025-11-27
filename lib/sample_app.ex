@@ -14,7 +14,7 @@ defmodule SampleApp do
     6) Start touch reader and handle events
   """
 
-  alias SampleApp.TFT
+  alias SampleApp.LCD
   alias SampleApp.SD
   alias SampleApp.Clock
   alias SampleApp.Touch
@@ -37,14 +37,14 @@ defmodule SampleApp do
     spi = :spi.open(@spi_config)
     :io.format(~c"SPI opened: ~p~n", [spi])
 
-    # De-select SD on the shared bus (touch/tft CS are controlled by the SPI device)
+    # De-select SD on the shared bus (touch/lcd CS are controlled by the SPI device)
     for pin <- [@pin_sd_cs] do
       :gpio.set_pin_mode(pin, :output)
       :gpio.digital_write(pin, :high)
     end
 
-    TFT.initialize(spi)
-    TFT.draw_sanity_bars(spi)
+    LCD.initialize(spi)
+    LCD.draw_sanity_bars(spi)
 
     case SD.mount(spi, @pin_sd_cs, @sd_root, @sd_driver) do
       {:ok, _mref} ->
@@ -80,7 +80,7 @@ defmodule SampleApp do
     receive do
       {:touch, x, y, _z} ->
         # a tiny 3x3 dot; color is bright green (RGB666-ish)
-        TFT.fill_rect_rgb666(spi, {max(x - 1, 0), max(y - 1, 0)}, {3, 3}, {0x00, 0xFC, 0x00})
+        LCD.fill_rect_rgb666(spi, {max(x - 1, 0), max(y - 1, 0)}, {3, 3}, {0x00, 0xFC, 0x00})
         touch_event_loop(spi)
 
       _other ->
@@ -91,11 +91,11 @@ defmodule SampleApp do
   # ── Blit helpers (RGB24 only) ───────────────────────────────────────────────────
 
   defp blit_fullscreen_rgb24_from_sd(spi, path) do
-    width = TFT.width()
-    height = TFT.height()
+    width = LCD.width()
+    height = LCD.height()
     pixels = width * height
     need = pixels * 3
-    chunk = TFT.max_chunk_bytes()
+    chunk = LCD.max_chunk_bytes()
 
     size =
       case SD.file_size(path, chunk) do
@@ -113,10 +113,10 @@ defmodule SampleApp do
     else
       :io.format(~c"[SD] Blit ~s as ~p x ~p (RGB24)~n", [path, width, height])
 
-      TFT.with_lock(fn ->
-        TFT.set_window(spi, {0, 0}, {width - 1, height - 1})
-        TFT.begin_ram_write(spi)
-        SD.stream_file_chunks(path, chunk, fn bin -> TFT.spi_write_chunks(spi, bin) end)
+      LCD.with_lock(fn ->
+        LCD.set_window(spi, {0, 0}, {width - 1, height - 1})
+        LCD.begin_ram_write(spi)
+        SD.stream_file_chunks(path, chunk, fn bin -> LCD.spi_write_chunks(spi, bin) end)
       end)
 
       :io.format(~c"[SD] Blit done.~n")
@@ -125,8 +125,8 @@ defmodule SampleApp do
   end
 
   defp blit_fullscreen_rgb24_from_priv(spi, app_atom, filename) do
-    width = TFT.width()
-    height = TFT.height()
+    width = LCD.width()
+    height = LCD.height()
     pixels = width * height
     need = pixels * 3
 
@@ -134,10 +134,10 @@ defmodule SampleApp do
       bin when is_binary(bin) and byte_size(bin) == need ->
         :io.format(~c"[priv] Blit ~s as ~p x ~p (RGB24)~n", [filename, width, height])
 
-        TFT.with_lock(fn ->
-          TFT.set_window(spi, {0, 0}, {width - 1, height - 1})
-          TFT.begin_ram_write(spi)
-          TFT.spi_write_chunks(spi, bin)
+        LCD.with_lock(fn ->
+          LCD.set_window(spi, {0, 0}, {width - 1, height - 1})
+          LCD.begin_ram_write(spi)
+          LCD.spi_write_chunks(spi, bin)
         end)
 
         :io.format(~c"[priv] Blit done.~n")

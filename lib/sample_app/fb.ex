@@ -3,12 +3,12 @@ defmodule SampleApp.FB do
   Tiny RGB buffer for a rectangular region:
     * `new({w,h}, {r,g,b})` allocates an in-RAM region filled with bg
     * `fill_rect/4` draws solid rectangles (clipped)
-    * `push/3` sends the region to the TFT at a given screen location
+    * `push/3` sends the region to the LCD at a given screen location
 
   Pixels are 3 bytes (R,G,B). Designed for small regions (e.g., a clock box).
   """
 
-  alias SampleApp.TFT
+  alias SampleApp.LCD
 
   defstruct [:w, :h, :rows]
 
@@ -72,9 +72,9 @@ defmodule SampleApp.FB do
   Uses one address-window and streams one row per SPI write.
   """
   def push(spi, %__MODULE__{w: w, h: h, rows: rows}, {sx, sy}) do
-    TFT.set_window(spi, {sx, sy}, {sx + w - 1, sy + h - 1})
-    TFT.begin_ram_write(spi)
-    for row_bin <- rows, do: TFT.spi_write_chunks(spi, row_bin)
+    LCD.set_window(spi, {sx, sy}, {sx + w - 1, sy + h - 1})
+    LCD.begin_ram_write(spi)
+    for row_bin <- rows, do: LCD.spi_write_chunks(spi, row_bin)
     :ok
   end
 end
