@@ -11,16 +11,23 @@ Tiny Elixir/AtomVM demo for the Seeed XIAO-ESP32S3 that:
 
 ## Wiring
 
-| Function | XIAO-ESP32S3 pin → GPIO |
-| -------- | --------------- |
-| SCLK     | D8 → GPIO7      |
-| MISO     | D9 → GPIO8      |
-| MOSI     | D10 → GPIO9     |
-| TFT CS   | GPIO43          |
-| Touch CS | GPIO44          |
-| TFT D/C  | D2 → GPIO3      |
-| TFT RST  | D1 → GPIO2      |
-| SD CS    | D3 → GPIO4      |
+The table below shows the wiring for the `2024-05` board type.
+
+| Function | XIAO-ESP32S3 pin | ESP32-S3 GPIO |
+| -------- | ---------------- | ------------- |
+| SCLK     | D8               | 7             |
+| MISO     | D9               | 8             |
+| MOSI     | D10              | 9             |
+| TFT CS   | —                | 43            |
+| Touch CS | —                | 44            |
+| TFT D/C  | D2               | 3             |
+| TFT RST  | D1               | 2             |
+| SD CS    | D3               | 4             |
+
+For the `2025-12` board type, TFT CS and SD CS are swapped:
+
+- TFT CS: GPIO4
+- SD CS: GPIO43
 
 ---
 
@@ -29,6 +36,11 @@ Tiny Elixir/AtomVM demo for the Seeed XIAO-ESP32S3 that:
 ```sh
 # Get deps & compile
 mix deps.get
+
+# Select board type via PIYOPIYO_BOARD (default: ergo-2025-12)
+export PIYOPIYO_BOARD=2024-05
+# or
+export PIYOPIYO_BOARD=2025-12
 
 # Package BEAMs into an AVM (outputs _build/atomvm/main.avm)
 mix atomvm.packbeam
