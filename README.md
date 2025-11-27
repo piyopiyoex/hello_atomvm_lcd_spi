@@ -20,7 +20,7 @@ This project uses a **custom breakout board** designed for the XIAO-ESP32S3, wit
 Two board revisions are supported:
 
 * **2024-05** — original wiring
-* **2025-12** — same design except TFT CS ↔︎ SD CS are swapped
+* **2025-12** — same design except LCD CS ↔︎ SD CS are swapped
 
 These are the boards shown in the photos below.
 
@@ -39,15 +39,15 @@ The table below shows the wiring for the **2024-05** board type.
 | SCLK     | D8               | 7             |
 | MISO     | D9               | 8             |
 | MOSI     | D10              | 9             |
-| TFT CS   | —                | 43            |
+| LCD CS   | —                | 43            |
 | Touch CS | —                | 44            |
-| TFT D/C  | D2               | 3             |
-| TFT RST  | D1               | 2             |
+| LCD D/C  | D2               | 3             |
+| LCD RST  | D1               | 2             |
 | SD CS    | D3               | 4             |
 
 For the **2025-12** revision, these two lines change:
 
-* **TFT CS → GPIO4**
+* **LCD CS → GPIO4**
 * **SD CS → GPIO43**
 
 ---

@@ -5,7 +5,7 @@ defmodule SampleApp.Clock do
   """
 
   import Bitwise
-  alias SampleApp.TFT
+  alias SampleApp.LCD
   alias SampleApp.Font
 
   @scale_x 3
@@ -86,8 +86,8 @@ defmodule SampleApp.Clock do
   end
 
   defp resolve_origin(opts, cell_w, cell_h) do
-    sw = TFT.width()
-    sh = TFT.height()
+    sw = LCD.width()
+    sh = LCD.height()
 
     cells = 8
     total_w = cells * cell_w + (cells - 1) * @gap_x
@@ -135,8 +135,8 @@ defmodule SampleApp.Clock do
   end
 
   defp clear_cells(spi, x0, y0, cw, ch) do
-    sw = TFT.width()
-    sh = TFT.height()
+    sw = LCD.width()
+    sh = LCD.height()
 
     cells = 8
     gaps_between = @gap_x * (cells - 1)
@@ -157,11 +157,11 @@ defmodule SampleApp.Clock do
     width_pixels = right - left + 1
     rows = bottom - top + 1
 
-    TFT.with_lock(fn ->
-      TFT.set_window(spi, {left, top}, {right, bottom})
-      TFT.begin_ram_write(spi)
+    LCD.with_lock(fn ->
+      LCD.set_window(spi, {left, top}, {right, bottom})
+      LCD.begin_ram_write(spi)
       line = :binary.copy(@bg_bin, width_pixels)
-      TFT.repeat_rows(spi, line, rows)
+      LCD.repeat_rows(spi, line, rows)
     end)
   end
 
@@ -174,11 +174,11 @@ defmodule SampleApp.Clock do
         x = x0 + idx * (cw + @gap_x)
         y = y0
 
-        TFT.with_lock(fn ->
-          TFT.set_window(spi, {x, y}, {x + cw - 1, y + ch - 1})
-          TFT.begin_ram_write(spi)
+        LCD.with_lock(fn ->
+          LCD.set_window(spi, {x, y}, {x + cw - 1, y + ch - 1})
+          LCD.begin_ram_write(spi)
           bin = glyph_bin(glyphs, curr_ch)
-          TFT.spi_write_chunks(spi, bin)
+          LCD.spi_write_chunks(spi, bin)
         end)
       end
     end

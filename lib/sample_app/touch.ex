@@ -11,7 +11,7 @@ defmodule SampleApp.Touch do
   """
 
   import Bitwise
-  alias SampleApp.TFT
+  alias SampleApp.LCD
   alias SampleApp.Font
 
   @spi_dev :spi_dev_touch
@@ -231,8 +231,8 @@ defmodule SampleApp.Touch do
     nx = if @invert_x, do: 1.0 - nx, else: nx
     ny = if @invert_y, do: 1.0 - ny, else: ny
 
-    x = trunc(nx * (TFT.width() - 1))
-    y = trunc(ny * (TFT.height() - 1))
+    x = trunc(nx * (LCD.width() - 1))
+    y = trunc(ny * (LCD.height() - 1))
     {x, y}
   end
 
@@ -261,8 +261,8 @@ defmodule SampleApp.Touch do
 
   defp draw_box(spi, x, y, color_bin) when is_binary(color_bin) do
     rads = @cursor_r
-    w = TFT.width()
-    h = TFT.height()
+    w = LCD.width()
+    h = LCD.height()
     x0 = max(0, x - rads)
     y0 = max(0, y - rads)
     x1 = min(w - 1, x + rads)
@@ -272,11 +272,11 @@ defmodule SampleApp.Touch do
     bh = y1 - y0 + 1
 
     # Single critical section
-    TFT.with_lock(fn ->
-      TFT.set_window(spi, {x0, y0}, {x1, y1})
-      TFT.begin_ram_write(spi)
+    LCD.with_lock(fn ->
+      LCD.set_window(spi, {x0, y0}, {x1, y1})
+      LCD.begin_ram_write(spi)
       row = :binary.copy(color_bin, bw)
-      TFT.repeat_rows(spi, row, bh)
+      LCD.repeat_rows(spi, row, bh)
     end)
   end
 
@@ -375,14 +375,14 @@ defmodule SampleApp.Touch do
         {bar_w, bar_h} = osd_max_dims()
 
         x0 = @osd_margin
-        y0 = TFT.height() - bar_h - @osd_margin
+        y0 = LCD.height() - bar_h - @osd_margin
 
-        TFT.with_lock(fn ->
+        LCD.with_lock(fn ->
           # Clear the whole fixed bar area
-          TFT.set_window(spi, {x0 - 1, y0 - 1}, {x0 + bar_w, y0 + bar_h})
-          TFT.begin_ram_write(spi)
+          LCD.set_window(spi, {x0 - 1, y0 - 1}, {x0 + bar_w, y0 + bar_h})
+          LCD.begin_ram_write(spi)
           clear_row = :binary.copy(@osd_bg_bin, bar_w + 2)
-          for _ <- 1..(bar_h + 2), do: TFT.spi_write_chunks(spi, clear_row)
+          for _ <- 1..(bar_h + 2), do: LCD.spi_write_chunks(spi, clear_row)
 
           # Draw current text, left-aligned within the bar
           draw_cells(spi, list, x0, y0)
@@ -422,9 +422,9 @@ defmodule SampleApp.Touch do
   defp draw_cells(_spi, [], _x, _y), do: :ok
 
   defp draw_cells(spi, [{w, h, bin} | rest], x, y) do
-    TFT.set_window(spi, {x, y}, {x + w - 1, y + h - 1})
-    TFT.begin_ram_write(spi)
-    TFT.spi_write_chunks(spi, bin)
+    LCD.set_window(spi, {x, y}, {x + w - 1, y + h - 1})
+    LCD.begin_ram_write(spi)
+    LCD.spi_write_chunks(spi, bin)
     draw_cells(spi, rest, x + w + @osd_gap, y)
   end
 
@@ -460,7 +460,7 @@ defmodule SampleApp.Touch do
   end
 
   defp osd_max_text() do
-    Integer.to_charlist(TFT.width() - 1) ++ [?:] ++ Integer.to_charlist(TFT.height() - 1)
+    Integer.to_charlist(LCD.width() - 1) ++ [?:] ++ Integer.to_charlist(LCD.height() - 1)
   end
 
   defp osd_max_dims() do

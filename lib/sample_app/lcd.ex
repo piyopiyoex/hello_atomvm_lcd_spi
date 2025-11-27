@@ -1,4 +1,4 @@
-defmodule SampleApp.TFT do
+defmodule SampleApp.LCD do
   @moduledoc """
   ILI9488 (SPI) helpers for AtomVM on XIAO-ESP32S3.
   """
@@ -16,7 +16,7 @@ defmodule SampleApp.TFT do
   def max_chunk_bytes(), do: @max_chunk_bytes
 
   # --- SPI device name ---------------------------------------------------------
-  @spi_dev :spi_dev_tft
+  @spi_dev :spi_dev_lcd
   def spi_device(), do: @spi_dev
 
   # Control pins (XIAO silkscreen → GPIO)
@@ -49,12 +49,12 @@ defmodule SampleApp.TFT do
   @spi_chunk_bytes @target - rem(@target, @bpp * @dma_align)
   @spi_chunk_px div(@spi_chunk_bytes, @bpp)
 
-  # --- Re-entrant process-based mutex for multi-step TFT ops -------------------
-  @lock_name :tft_lock
-  @lock_depth_key :tft_lock_depth
+  # --- Re-entrant process-based mutex for multi-step LCD ops -------------------
+  @lock_name :lcd_lock
+  @lock_depth_key :lcd_lock_depth
 
   @doc """
-  Run `fun` while holding a global TFT lock.
+  Run `fun` while holding a global LCD lock.
 
   - Re-entrant for the *same* process via a per-process depth counter.
   - Only the outermost call acquires/releases the global name.

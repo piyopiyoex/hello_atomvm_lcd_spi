@@ -2,7 +2,7 @@ import Config
 
 board = System.get_env("PIYOPIYO_BOARD") || "2025-12"
 
-{tft_cs_pin, sd_cs_pin} =
+{lcd_cs_pin, sd_cs_pin} =
   case board do
     "2024-05" ->
       {43, 4}
@@ -23,8 +23,8 @@ board = System.get_env("PIYOPIYO_BOARD") || "2025-12"
 spi_config = [
   bus_config: [sclk: 7, miso: 8, mosi: 9],
   device_config: [
-    spi_dev_tft: [
-      cs: tft_cs_pin,
+    spi_dev_lcd: [
+      cs: lcd_cs_pin,
       mode: 0,
       clock_speed_hz: 20_000_000,
       command_len_bits: 0,
