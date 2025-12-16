@@ -7,6 +7,10 @@ This is a tiny Elixir/AtomVM demo for the Seeed **XIAO-ESP32S3** featuring:
 * A lightweight HH:MM:SS clock overlay
 * Resistive touch input via XPT2046/ADS7846 (with a small on-screen cursor + `x:y` readout)
 
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/851da792-aef1-41b9-8931-4449079e4f6e" alt="Piyopiyo PCB" width="320">
+</p>
+
 ---
 
 ## Hardware Overview
@@ -17,16 +21,23 @@ This project uses a **custom breakout board** designed for the XIAO-ESP32S3, wit
 * XPT2046/ADS7846 touch controller
 * SD card (shared SPI bus)
 
-Two board revisions are supported:
+All hardware-related materials are maintained in a dedicated repository:
+
+- [piyopiyoex/piyopiyo-pcb](https://github.com/piyopiyoex/piyopiyo-pcb)
+
+For board assembly, pinout verification, or revision-specific details, the PCB
+repository should be treated as the authoritative source.
+
+The firmware supports the following board revisions:
 
 - **v1.5 or lower** — original wiring
 - **v1.6 or higher** — same board, except LCD-CS and SD-CS are swapped
 
 These are the boards shown in the photos below.
 
-![](https://github.com/user-attachments/assets/4e33218d-90aa-43cf-a5d8-102912ec05a6)
-
-![](https://github.com/user-attachments/assets/851da792-aef1-41b9-8931-4449079e4f6e)
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/4e33218d-90aa-43cf-a5d8-102912ec05a6" alt="Piyopiyo PCB" width="320">
+</p>
 
 ---
 
