@@ -1,25 +1,50 @@
 defmodule SampleApp.LCD do
   @moduledoc """
-  ILI9488 (SPI) helpers for AtomVM on XIAO-ESP32S3.
+  ILI9488 SPI LCD helpers for AtomVM.
+
+  ## Concurrency model
+
+  This module does not lock. Callers must serialize multi-step sequences
+  (address window + RAMWR + streaming) using `SampleApp.SPIBus.transaction/2`.
+
+  ## Pixel format
+
+  - The panel is configured for RGB666 (18-bit).
+  - We stream RGB888 bytes (3 bytes/pixel). The LCD truncates low bits per channel.
+    This is a practical way to avoid per-pixel packing while still matching RGB666 mode.
+
+  ## Throughput and chunking
+
+  Large SPI writes can fail if they exceed driver limits.
+  We use:
+  - `@max_chunk_bytes` for generic streaming (safe upper bound)
+  - ~4KiB aligned chunks for solid fills to keep DMA happy and performance stable
   """
+
+  # AtomVM provides these modules at runtime (host BEAM does not).
+  @compile {:no_warn_undefined, :spi}
+  @compile {:no_warn_undefined, :gpio}
 
   import Bitwise
 
-  # --- Display geometry (exported) --------------------------------------------
+  # Display geometry
   @screen_w 480
   @screen_h 320
   def width(), do: @screen_w
   def height(), do: @screen_h
 
-  # Maximum safe write size (bytes). 4092 avoids SPI driver error 258.
+  # Maximum safe single write size (bytes) for the SPI driver on this target.
+  # Empirically, sizes around 4096 can trigger driver errors (e.g. "258").
+  # Keeping it slightly under 4KiB is a boring but reliable choice.
   @max_chunk_bytes 4092
   def max_chunk_bytes(), do: @max_chunk_bytes
 
-  # --- SPI device name ---------------------------------------------------------
+  # SPI device name
   @spi_dev :spi_dev_lcd
   def spi_device(), do: @spi_dev
 
-  # Control pins (XIAO silkscreen → GPIO)
+  # Control pins (board silkscreen → ESP32 GPIO).
+  # These are not SPI “device CS” pins; they are panel control signals (D/C, RESET).
   # D2: D/C
   @pin_dc 3
   # D1: RESET
@@ -49,68 +74,7 @@ defmodule SampleApp.LCD do
   @spi_chunk_bytes @target - rem(@target, @bpp * @dma_align)
   @spi_chunk_px div(@spi_chunk_bytes, @bpp)
 
-  # --- Re-entrant process-based mutex for multi-step LCD ops -------------------
-  @lock_name :lcd_lock
-  @lock_depth_key :lcd_lock_depth
-
-  @doc """
-  Run `fun` while holding a global LCD lock.
-
-  - Re-entrant for the *same* process via a per-process depth counter.
-  - Only the outermost call acquires/releases the global name.
-  """
-  def with_lock(fun) when is_function(fun, 0) do
-    depth = get_depth()
-
-    if depth == 0, do: lock()
-    put_depth(depth + 1)
-
-    try do
-      fun.()
-    after
-      nd = get_depth() - 1
-      nd2 = if nd < 0, do: 0, else: nd
-      put_depth(nd2)
-      if nd2 == 0, do: unlock()
-    end
-  end
-
-  # Safely read/write per-process depth (normalize :undefined)
-  defp get_depth() do
-    case :erlang.get(@lock_depth_key) do
-      :undefined -> 0
-      n when is_integer(n) -> n
-      _ -> 0
-    end
-  end
-
-  defp put_depth(n) when is_integer(n) and n >= 0 do
-    :erlang.put(@lock_depth_key, n)
-  end
-
-  # Acquire the global lock (blocking spin with tiny sleep).
-  defp lock() do
-    try do
-      :erlang.register(@lock_name, self())
-      :ok
-    rescue
-      _ ->
-        Process.sleep(1)
-        lock()
-    end
-  end
-
-  # Release the global lock *only* if we own it.
-  defp unlock() do
-    case :erlang.whereis(@lock_name) do
-      pid when pid == self() -> _ = :erlang.unregister(@lock_name)
-      _ -> :ok
-    end
-
-    :ok
-  end
-
-  # ── Public API ────────────────────────────────────────────────────────────────
+  ## Public API
 
   def initialize(spi) do
     :gpio.set_pin_mode(@pin_dc, :output)
@@ -149,25 +113,26 @@ defmodule SampleApp.LCD do
 
   @doc "Fill a rectangle with a solid RGB666-ish color (RGB888 on wire)."
   def fill_rect_rgb666(spi, {x, y}, {w, h}, {r, g, b}) do
-    with_lock(fn ->
-      set_window(spi, {x, y}, {x + w - 1, y + h - 1})
+    set_window(spi, {x, y}, {x + w - 1, y + h - 1})
 
-      total_px = w * h
-      chunk_px = @spi_chunk_px
-      chunk = :binary.copy(<<r, g, b>>, chunk_px)
+    total_px = w * h
+    chunk_px = @spi_chunk_px
+    chunk = :binary.copy(<<r, g, b>>, chunk_px)
 
-      begin_ram_write(spi)
+    begin_ram_write(spi)
 
-      full = div(total_px, chunk_px)
-      remp = rem(total_px, chunk_px)
+    full = div(total_px, chunk_px)
+    remp = rem(total_px, chunk_px)
 
-      for _ <- 1..full, do: :ok = :spi.write(spi, @spi_dev, %{write_data: chunk})
+    for _ <- 1..full do
+      :ok = :spi.write(spi, @spi_dev, %{write_data: chunk})
+    end
 
-      if remp > 0,
-        do: :ok = :spi.write(spi, @spi_dev, %{write_data: :binary.copy(<<r, g, b>>, remp)})
+    if remp > 0 do
+      :ok = :spi.write(spi, @spi_dev, %{write_data: :binary.copy(<<r, g, b>>, remp)})
+    end
 
-      :ok
-    end)
+    :ok
   end
 
   def set_window(spi, {x0, y0}, {x1, y1}) do
@@ -198,18 +163,16 @@ defmodule SampleApp.LCD do
   def repeat_rows(_spi, _row_bin, _rows), do: :ok
 
   def clear_screen(spi, {r, g, b}) do
-    with_lock(fn ->
-      w = width()
-      h = height()
-      set_window(spi, {0, 0}, {w - 1, h - 1})
-      begin_ram_write(spi)
-      line = :binary.copy(<<r, g, b>>, w)
-      repeat_rows(spi, line, h)
-      :ok
-    end)
+    w = width()
+    h = height()
+    set_window(spi, {0, 0}, {w - 1, h - 1})
+    begin_ram_write(spi)
+    line = :binary.copy(<<r, g, b>>, w)
+    repeat_rows(spi, line, h)
+    :ok
   end
 
-  # ── Low-level ────────────────────────────────────────────────────────────────
+  ## Internals
 
   defp send_command(spi, byte) when is_integer(byte) and byte in 0..255 do
     set_dc_for_command()

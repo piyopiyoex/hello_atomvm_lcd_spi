@@ -1,70 +1,104 @@
 defmodule SampleApp.Image do
   @moduledoc """
-  AtomVM-safe image utilities.
+  AtomVM-safe image helpers.
 
-  - Fast chunk conversion: RGB565 **little-endian** → RGB888 (3 bytes/pixel),
-    with selectable source order (:rgb or :bgr) to fix red/blue swaps.
-  - bpp detection from file size.
+  This module is focused on *stream-friendly* conversions where you do not want a
+  large image library dependency.
+
+  ## Provided utilities
+
+  - Convert RGB565 little-endian → RGB888 (3 bytes/pixel)
+    - Useful when assets are stored as RGB565 to save space.
+    - Supports `:rgb` vs `:bgr` source order to fix red/blue swaps.
+
+  - Infer bytes-per-pixel from file size and pixel count
+    - A small sanity check before attempting a blit.
   """
 
   import Bitwise
 
-  @doc """
-  Back-compat wrapper (assumes :rgb). Prefer `rgb565le_to_rgb888_chunk/2`.
-  """
-  @spec rgb565le_to_rgb888_chunk(binary()) :: binary()
-  def rgb565le_to_rgb888_chunk(bin), do: rgb565le_to_rgb888_chunk(bin, :rgb)
+  @type source_channel_order :: :rgb | :bgr
 
   @doc """
-  Convert a binary of RGB565 **little-endian** pixels (`<<lo,hi, lo,hi, ...>>`)
-  into RGB888 (`<<r,g,b, r,g,b, ...>>`).
+  Convert RGB565 little-endian pixels into RGB888 (3 bytes/pixel).
 
-  `order` is `:rgb` for true RGB565, or `:bgr` when your source uses BGR565
-  (common for BMP-style dumps). Any trailing odd byte is ignored safely.
+  `source_order` is about how the *stored* RGB565 should be interpreted:
+  - `:rgb` means the usual R:G:B bit layout
+  - `:bgr` swaps red/blue in the output (handy when assets were produced for BGR panels)
   """
-  @spec rgb565le_to_rgb888_chunk(binary(), :rgb | :bgr) :: binary()
-  def rgb565le_to_rgb888_chunk(bin, order), do: conv(bin, <<>>, order)
+  @spec convert_rgb565_le_pixels_to_rgb888(iodata(), source_channel_order()) :: binary()
+  def convert_rgb565_le_pixels_to_rgb888(data, source_order \\ :rgb)
 
-  # Done
-  defp conv(<<>>, acc, _order), do: acc
-  # Odd trailing byte — ignore safely
-  defp conv(<<_lo>>, acc, _order), do: acc
+  def convert_rgb565_le_pixels_to_rgb888(bin, source_order)
+      when is_binary(bin) and source_order in [:rgb, :bgr] do
+    convert_rgb565_le_binary_to_rgb888(bin, source_order, [])
+  end
 
-  # Hot path: two bytes -> three bytes
-  defp conv(<<lo, hi, rest::binary>>, acc, order) do
-    # 16-bit little-endian value
-    val = bor(lo, bsl(hi, 8))
-
-    # Extract channels in RGB565 layout
-    r5 = band(bsr(val, 11), 0x1F)
-    g6 = band(bsr(val, 5), 0x3F)
-    b5 = band(val, 0x1F)
-
-    # Expand to 8-bit (bit replication)
-    r8 = bor(bsl(r5, 3), bsr(r5, 2))
-    g8 = bor(bsl(g6, 2), bsr(g6, 4))
-    b8 = bor(bsl(b5, 3), bsr(b5, 2))
-
-    # Swap R/B if the *source* is BGR565
-    {rr, gg, bb} =
-      case order do
-        :bgr -> {b8, g8, r8}
-        _ -> {r8, g8, b8}
-      end
-
-    conv(rest, <<acc::binary, rr, gg, bb>>, order)
+  def convert_rgb565_le_pixels_to_rgb888(data, source_order)
+      when source_order in [:rgb, :bgr] do
+    data
+    |> :erlang.iolist_to_binary()
+    |> convert_rgb565_le_binary_to_rgb888(source_order, [])
   end
 
   @doc """
-  Given a file size (bytes) and pixel count, return `2`, `3`, or `:unknown`.
-  Useful for validating `.RGB` files (16-bit vs 24-bit payloads).
+  Infer bytes-per-pixel from `size_bytes` and pixel count.
   """
-  @spec bpp_from_size(non_neg_integer(), pos_integer()) :: 2 | 3 | :unknown
-  def bpp_from_size(size_bytes, pixels) when pixels > 0 do
+  @spec infer_bytes_per_pixel(non_neg_integer(), pos_integer()) :: 2 | 3 | :unknown
+  def infer_bytes_per_pixel(size_bytes, pixels)
+      when is_integer(size_bytes) and size_bytes >= 0 and pixels > 0 do
     cond do
       size_bytes == pixels * 2 -> 2
       size_bytes == pixels * 3 -> 3
       true -> :unknown
     end
+  end
+
+  defp convert_rgb565_le_binary_to_rgb888(<<>>, _source_order, acc) do
+    finalize_iolist(acc)
+  end
+
+  defp convert_rgb565_le_binary_to_rgb888(<<_lo>>, _source_order, acc) do
+    finalize_iolist(acc)
+  end
+
+  defp convert_rgb565_le_binary_to_rgb888(<<lo, hi, rest::binary>>, source_order, acc) do
+    {r8, g8, b8} = decode_rgb565_le_pixel_to_rgb888(lo, hi)
+
+    pixel_rgb888 =
+      case source_order do
+        :bgr -> <<b8, g8, r8>>
+        :rgb -> <<r8, g8, b8>>
+      end
+
+    convert_rgb565_le_binary_to_rgb888(rest, source_order, [pixel_rgb888 | acc])
+  end
+
+  defp finalize_iolist(acc) do
+    acc
+    |> :lists.reverse()
+    |> :erlang.iolist_to_binary()
+  end
+
+  defp decode_rgb565_le_pixel_to_rgb888(lo, hi) do
+    value16 = lo ||| hi <<< 8
+
+    r5 = value16 >>> 11 &&& 0x1F
+    g6 = value16 >>> 5 &&& 0x3F
+    b5 = value16 &&& 0x1F
+
+    {
+      expand_5bit_channel_to_8bit(r5),
+      expand_6bit_channel_to_8bit(g6),
+      expand_5bit_channel_to_8bit(b5)
+    }
+  end
+
+  defp expand_5bit_channel_to_8bit(v5) do
+    v5 <<< 3 ||| v5 >>> 2
+  end
+
+  defp expand_6bit_channel_to_8bit(v6) do
+    v6 <<< 2 ||| v6 >>> 4
   end
 end

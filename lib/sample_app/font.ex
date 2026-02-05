@@ -1,7 +1,13 @@
 defmodule SampleApp.Font do
   @moduledoc """
-  Tiny 5x7 monospace bitmap font (digits + colon) for AtomVM.
-  Each glyph is {width, height, [row_bits...]} with MSB on the left.
+  Minimal 5x7 monospace bitmap font (digits + colon) for AtomVM.
+
+  A glyph is returned as `{width, height, rows}` where:
+  - `rows` is a list of integers, one per row
+  - bits are MSB-left within the glyph width (bit `width-1` is the leftmost pixel)
+  - the caller decides scaling and foreground/background colors
+
+  This keeps rendering logic out of the font module and makes it easy to reuse.
   """
 
   @w 5

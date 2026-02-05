@@ -1,12 +1,32 @@
 defmodule SampleApp.Clock do
   @moduledoc """
-  Efficient HH:MM:SS clock with pre-rendered glyphs and partial updates.
-  Supports positioning via `at: {x,y}` or `h_align`/`v_align`.
+  Small, allocation-conscious HH:MM:SS clock renderer.
+
+  ## Design goals
+
+  - Avoid per-frame font rendering.
+    - We pre-render glyph cells (digits + colon) into binaries once at init.
+    - Each tick only writes the cells that changed since the previous tick.
+
+  - Be polite on a shared SPI bus.
+    - Each update is wrapped in a single `SPIBus.transaction/2` so LCD writes do not
+      interleave with touch reads or SD streaming.
+
+  ## Positioning options
+
+  - Absolute: `at: {x, y}` (top-left of the first character cell)
+  - Relative: `h_align: :left | :center | :right`, `v_align: :top | :center | :bottom`
+    - If `v_align` is not set, `y:` is used as a convenience top offset.
+
+  ## Pixel format note
+
+  The LCD is configured for RGB666, but we stream RGB888 bytes.
+  The panel truncates low bits, so binaries are still 3 bytes/pixel.
   """
 
   import Bitwise
-  alias SampleApp.LCD
-  alias SampleApp.Font
+
+  alias SampleApp.{Font, LCD, SPIBus}
 
   @scale_x 3
   @scale_y 4
@@ -14,19 +34,20 @@ defmodule SampleApp.Clock do
   @padding_y 3
 
   # Colors (compile-time packed)
-  @bg {0x10, 0x10, 0x10}
-  @fg {0xF8, 0xF8, 0xF8}
   @bg_bin <<0x10, 0x10, 0x10>>
   @fg_bin <<0xF8, 0xF8, 0xF8>>
 
-  def start_link(spi, opts \\ []) do
-    pid = spawn_link(fn -> init(spi, opts) end)
-    {:ok, pid}
+  ## Public API
+
+  def start_link(opts \\ []) do
+    :gen_server.start_link(__MODULE__, opts, [])
   end
 
-  def stop(pid), do: send(pid, :stop)
+  def stop(pid), do: :gen_server.stop(pid)
 
-  defp init(spi, opts) do
+  ## gen_server callbacks
+
+  def init(opts) do
     :io.format(~c"[clock] starting~n", [])
 
     {gw8, gh8, _} = Font.glyph(?8)
@@ -36,59 +57,67 @@ defmodule SampleApp.Clock do
     glyphs = pre_render_glyphs(cell_w, cell_h)
     {x0, y0} = resolve_origin(opts, cell_w, cell_h)
 
-    clear_cells(spi, x0, y0, cell_w, cell_h)
+    SPIBus.transaction(fn spi ->
+      clear_cells(spi, x0, y0, cell_w, cell_h)
+    end)
 
     sec = :erlang.system_time(:second)
     chars = to_chars(sec)
 
-    draw_changed_cells(spi, x0, y0, cell_w, cell_h, glyphs, <<>>, chars)
+    SPIBus.transaction(fn spi ->
+      draw_changed_cells(spi, x0, y0, cell_w, cell_h, glyphs, <<>>, chars)
+    end)
+
     arm_next_half_tick()
 
-    loop(%{
-      spi: spi,
-      x0: x0,
-      y0: y0,
-      cell_w: cell_w,
-      cell_h: cell_h,
-      glyphs: glyphs,
-      last_chars: chars
-    })
+    {:ok,
+     %{
+       x0: x0,
+       y0: y0,
+       cell_w: cell_w,
+       cell_h: cell_h,
+       glyphs: glyphs,
+       last_chars: chars
+     }}
   end
 
-  defp loop(state) do
-    receive do
-      :tick ->
-        sec = :erlang.system_time(:second)
-        chars = to_chars(sec)
+  def handle_info(:tick, state) do
+    sec = :erlang.system_time(:second)
+    chars = to_chars(sec)
 
-        if chars != state.last_chars do
-          draw_changed_cells(
-            state.spi,
-            state.x0,
-            state.y0,
-            state.cell_w,
-            state.cell_h,
-            state.glyphs,
-            state.last_chars,
-            chars
-          )
-        end
+    if chars != state.last_chars do
+      SPIBus.transaction(fn spi ->
+        draw_changed_cells(
+          spi,
+          state.x0,
+          state.y0,
+          state.cell_w,
+          state.cell_h,
+          state.glyphs,
+          state.last_chars,
+          chars
+        )
+      end)
 
-        arm_next_half_tick()
-        loop(%{state | last_chars: chars})
-
-      :stop ->
-        :ok
-
-      _ ->
-        loop(state)
+      arm_next_half_tick()
+      {:noreply, %{state | last_chars: chars}}
+    else
+      arm_next_half_tick()
+      {:noreply, state}
     end
   end
+
+  def handle_info(_msg, state), do: {:noreply, state}
+
+  def terminate(_reason, _state), do: :ok
+
+  ## Internals
 
   defp resolve_origin(opts, cell_w, cell_h) do
     sw = LCD.width()
     sh = LCD.height()
 
+    # We always render "HH:MM:SS" which is 8 characters (including two colons).
     cells = 8
     total_w = cells * cell_w + (cells - 1) * @gap_x
     total_h = cell_h
@@ -122,10 +151,12 @@ defmodule SampleApp.Clock do
     end
   end
 
-  defp clamp(v, min, max) when v < min, do: min
-  defp clamp(v, min, max) when v > max, do: max
+  defp clamp(v, min, _max) when v < min, do: min
+  defp clamp(v, _min, max) when v > max, do: max
   defp clamp(v, _min, _max), do: v
 
+  # Align ticks to the next 500ms boundary using monotonic time.
+  # This reduces drift compared to "sleep 1000ms" loops and keeps updates smooth.
   defp arm_next_half_tick() do
     now_us = :erlang.monotonic_time(:microsecond)
     tick_us = 500_000
@@ -157,12 +188,10 @@ defmodule SampleApp.Clock do
     width_pixels = right - left + 1
     rows = bottom - top + 1
 
-    LCD.with_lock(fn ->
-      LCD.set_window(spi, {left, top}, {right, bottom})
-      LCD.begin_ram_write(spi)
-      line = :binary.copy(@bg_bin, width_pixels)
-      LCD.repeat_rows(spi, line, rows)
-    end)
+    LCD.set_window(spi, {left, top}, {right, bottom})
+    LCD.begin_ram_write(spi)
+    line = :binary.copy(@bg_bin, width_pixels)
+    LCD.repeat_rows(spi, line, rows)
   end
 
   defp draw_changed_cells(spi, x0, y0, cw, ch, glyphs, prev_chars, new_chars) do
@@ -174,12 +203,10 @@ defmodule SampleApp.Clock do
         x = x0 + idx * (cw + @gap_x)
         y = y0
 
-        LCD.with_lock(fn ->
-          LCD.set_window(spi, {x, y}, {x + cw - 1, y + ch - 1})
-          LCD.begin_ram_write(spi)
-          bin = glyph_bin(glyphs, curr_ch)
-          LCD.spi_write_chunks(spi, bin)
-        end)
+        LCD.set_window(spi, {x, y}, {x + cw - 1, y + ch - 1})
+        LCD.begin_ram_write(spi)
+        bin = glyph_bin(glyphs, curr_ch)
+        LCD.spi_write_chunks(spi, bin)
       end
     end
 
@@ -253,7 +280,7 @@ defmodule SampleApp.Clock do
     end
   end
 
-  defp render_cell_centered(ch, cell_w, cell_h) do
+  defp render_cell_centered(ch, cell_w, _cell_h) do
     {gw, gh, rows} = Font.glyph(ch)
     on_px = :binary.copy(@fg_bin, @scale_x)
     off_px = :binary.copy(@bg_bin, @scale_x)
