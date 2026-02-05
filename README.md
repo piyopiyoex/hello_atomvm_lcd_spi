@@ -2,10 +2,10 @@
 
 This is a tiny Elixir/AtomVM demo for the Seeed **XIAO-ESP32S3** featuring:
 
-* A 480×320 ILI9488 LCD driven over SPI
-* FAT-formatted SD card support with automatic image loading
-* A lightweight HH:MM:SS clock overlay
-* Resistive touch input via XPT2046/ADS7846 (with a small on-screen cursor + `x:y` readout)
+- A 480×320 ILI9488 LCD driven over SPI
+- FAT-formatted SD card support with automatic image loading
+- A lightweight HH:MM:SS clock overlay
+- Resistive touch input via XPT2046/ADS7846 (with a small on-screen cursor + `x:y` readout)
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/851da792-aef1-41b9-8931-4449079e4f6e" alt="Piyopiyo PCB" width="320">
@@ -13,13 +13,40 @@ This is a tiny Elixir/AtomVM demo for the Seeed **XIAO-ESP32S3** featuring:
 
 ---
 
+## Quickstart
+
+```sh
+# Clone this example AtomVM project
+git clone https://github.com/piyopiyoex/hello_atomvm_lcd_spi.git
+
+# Enter the project directory
+cd hello_atomvm_lcd_spi
+
+# Fetch Elixir dependencies
+mix deps.get
+
+# Flash the AtomVM runtime to your ESP32 (one-time setup)
+mix atomvm.esp32.install
+
+# Select board version (default: v1.6)
+export PIYOPIYO_BOARD=v1.5
+
+# Build and flash the application firmware to the device
+mix do clean + atomvm.esp32.flash --port /dev/ttyACM0
+
+# Open a serial monitor to view runtime logs
+picocom /dev/ttyACM0
+```
+
+---
+
 ## Hardware Overview
 
 This project uses a **custom breakout board** designed for the XIAO-ESP32S3, with connectors for:
 
-* ILI9488 LCD
-* XPT2046/ADS7846 touch controller
-* SD card (shared SPI bus)
+- ILI9488 LCD
+- XPT2046/ADS7846 touch controller
+- SD card (shared SPI bus)
 
 All hardware-related materials are maintained in a dedicated repository:
 
@@ -58,35 +85,13 @@ Base wiring for **v1.5 (and lower)**:
 
 For **v1.6 (and higher)**, these two swap:
 
-* **LCD CS → GPIO4**
-* **SD CS → GPIO43**
-
----
-
-## Build & Flash
-
-```sh
-# 1. Install dependencies
-mix deps.get
-
-# 2. Select board version (default: v1.6)
-export PIYOPIYO_BOARD=v1.5
-# or
-export PIYOPIYO_BOARD=v1.6
-
-# 3. Build the AVM image
-# NOTE: Run `mix clean` whenever you change PIYOPIYO_BOARD.
-mix clean
-mix atomvm.packbeam   # outputs _build/atomvm/main.avm
-
-# 4. Flash to the ESP32-S3
-mix atomvm.esp32.flash --port /dev/ttyACM0 --baud 115200
-```
+- **LCD CS → GPIO4**
+- **SD CS → GPIO43**
 
 ---
 
 ## `.RGB` Images
 
-* Raw RGB888 (no header), top-left origin
-* Exact size: **480 × 320 × 3 = 460,800 bytes**
-* Place the files at the SD card root; a fallback `priv/default.rgb` is used if none are found
+- Raw RGB888 (no header), top-left origin
+- Exact size: **480 × 320 × 3 = 460,800 bytes**
+- Place the files at the SD card root; a fallback `priv/default.rgb` is used if none are found
