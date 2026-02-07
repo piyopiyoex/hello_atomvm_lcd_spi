@@ -1,18 +1,9 @@
-defmodule SampleApp.Image do
+defmodule SampleApp.Graphics.Pixel do
   @moduledoc """
-  AtomVM-safe image helpers.
+  Small pixel helpers for AtomVM (no heavy image deps).
 
-  This module is focused on *stream-friendly* conversions where you do not want a
-  large image library dependency.
-
-  ## Provided utilities
-
-  - Convert RGB565 little-endian → RGB888 (3 bytes/pixel)
-    - Useful when assets are stored as RGB565 to save space.
-    - Supports `:rgb` vs `:bgr` source order to fix red/blue swaps.
-
+  - Convert RGB565 little-endian → RGB888 (3 bytes/pixel), with optional R/B swap
   - Infer bytes-per-pixel from file size and pixel count
-    - A small sanity check before attempting a blit.
   """
 
   import Bitwise
@@ -22,43 +13,37 @@ defmodule SampleApp.Image do
   @doc """
   Convert RGB565 little-endian pixels into RGB888 (3 bytes/pixel).
 
-  `source_order` is about how the *stored* RGB565 should be interpreted:
-  - `:rgb` means the usual R:G:B bit layout
-  - `:bgr` swaps red/blue in the output (handy when assets were produced for BGR panels)
+  `source_order` controls whether the stored data should be interpreted as `:rgb`
+  or as `:bgr` (swap red/blue in the output).
   """
   @spec convert_rgb565_le_pixels_to_rgb888(iodata(), source_channel_order()) :: binary()
   def convert_rgb565_le_pixels_to_rgb888(data, source_order \\ :rgb)
-
-  def convert_rgb565_le_pixels_to_rgb888(bin, source_order)
-      when is_binary(bin) and source_order in [:rgb, :bgr] do
-    convert_rgb565_le_binary_to_rgb888(bin, source_order, [])
-  end
-
-  def convert_rgb565_le_pixels_to_rgb888(data, source_order)
       when source_order in [:rgb, :bgr] do
-    data
-    |> :erlang.iolist_to_binary()
-    |> convert_rgb565_le_binary_to_rgb888(source_order, [])
+    bin =
+      if is_binary(data) do
+        data
+      else
+        :erlang.iolist_to_binary(data)
+      end
+
+    convert_rgb565_le_binary_to_rgb888(bin, source_order, [])
   end
 
   @doc """
   Infer bytes-per-pixel from `size_bytes` and pixel count.
   """
-  @spec infer_bytes_per_pixel(non_neg_integer(), pos_integer()) :: 2 | 3 | :unknown
+  @spec infer_bytes_per_pixel(non_neg_integer(), non_neg_integer()) :: 2 | 3 | :unknown
   def infer_bytes_per_pixel(size_bytes, pixels)
-      when is_integer(size_bytes) and size_bytes >= 0 and pixels > 0 do
+      when is_integer(size_bytes) and size_bytes >= 0 and is_integer(pixels) and pixels >= 0 do
     cond do
+      pixels == 0 -> :unknown
       size_bytes == pixels * 2 -> 2
       size_bytes == pixels * 3 -> 3
       true -> :unknown
     end
   end
 
-  defp convert_rgb565_le_binary_to_rgb888(<<>>, _source_order, acc) do
-    finalize_iolist(acc)
-  end
-
-  defp convert_rgb565_le_binary_to_rgb888(<<_lo>>, _source_order, acc) do
+  defp convert_rgb565_le_binary_to_rgb888(bin, _source_order, acc) when byte_size(bin) < 2 do
     finalize_iolist(acc)
   end
 

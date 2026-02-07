@@ -43,7 +43,7 @@ version = version_segments |> Enum.join(".") |> Version.parse!()
 spi_config = [
   bus_config: [sclk: 7, miso: 8, mosi: 9],
   device_config: [
-    spi_dev_lcd: [
+    spi_dev_display: [
       cs: lcd_cs_pin,
       mode: 0,
       clock_speed_hz: 20_000_000,

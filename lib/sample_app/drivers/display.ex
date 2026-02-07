@@ -1,24 +1,10 @@
-defmodule SampleApp.LCD do
+defmodule SampleApp.Drivers.Display do
   @moduledoc """
-  ILI9488 SPI LCD helpers for AtomVM.
+  ILI9488 SPI display helpers for AtomVM.
 
-  ## Concurrency model
-
-  This module does not lock. Callers must serialize multi-step sequences
-  (address window + RAMWR + streaming) using `SampleApp.SPIBus.transaction/2`.
-
-  ## Pixel format
-
-  - The panel is configured for RGB666 (18-bit).
-  - We stream RGB888 bytes (3 bytes/pixel). The LCD truncates low bits per channel.
-    This is a practical way to avoid per-pixel packing while still matching RGB666 mode.
-
-  ## Throughput and chunking
-
-  Large SPI writes can fail if they exceed driver limits.
-  We use:
-  - `@max_chunk_bytes` for generic streaming (safe upper bound)
-  - ~4KiB aligned chunks for solid fills to keep DMA happy and performance stable
+  - No internal locking: callers must wrap multi-step operations in `SampleApp.Buses.SPI.transaction/2`.
+  - Panel runs RGB666; we send RGB888 (3 bytes/pixel) and the panel truncates low bits.
+  - Large writes are chunked (`@max_chunk_bytes`, ~4KiB-aligned fills) for reliability/performance.
   """
 
   # AtomVM provides these modules at runtime (host BEAM does not).
@@ -40,8 +26,7 @@ defmodule SampleApp.LCD do
   def max_chunk_bytes(), do: @max_chunk_bytes
 
   # SPI device name
-  @spi_dev :spi_dev_lcd
-  def spi_device(), do: @spi_dev
+  @spi_dev :spi_dev_display
 
   # Control pins (board silkscreen → ESP32 GPIO).
   # These are not SPI “device CS” pins; they are panel control signals (D/C, RESET).
@@ -101,10 +86,17 @@ defmodule SampleApp.LCD do
   end
 
   def draw_sanity_bars(spi) do
-    fill_rect_rgb666(spi, {160, 100}, {40, 120}, rgb888_to_rgb666(255, 255, 255))
-    fill_rect_rgb666(spi, {200, 100}, {40, 120}, rgb888_to_rgb666(255, 0, 0))
-    fill_rect_rgb666(spi, {240, 100}, {40, 120}, rgb888_to_rgb666(0, 255, 0))
-    fill_rect_rgb666(spi, {280, 100}, {40, 120}, rgb888_to_rgb666(0, 0, 255))
+    w = width()
+    h = height()
+
+    bar_w = div(w, 3)
+    x0 = 0
+    x1 = bar_w
+    x2 = bar_w * 2
+
+    fill_rect_rgb666(spi, {x0, 0}, {bar_w, h}, rgb888_to_rgb666(255, 0, 0))
+    fill_rect_rgb666(spi, {x1, 0}, {bar_w, h}, rgb888_to_rgb666(0, 255, 0))
+    fill_rect_rgb666(spi, {x2, 0}, {w - x2, h}, rgb888_to_rgb666(0, 0, 255))
     :ok
   end
 
@@ -170,6 +162,38 @@ defmodule SampleApp.LCD do
     line = :binary.copy(<<r, g, b>>, w)
     repeat_rows(spi, line, h)
     :ok
+  end
+
+  @doc """
+  Expected bytes for a fullscreen raw RGB24 (RGB888) frame.
+  """
+  def fullscreen_rgb24_need_bytes() do
+    width() * height() * 3
+  end
+
+  @doc """
+  Prepare the display for a fullscreen RAM write (RGB24 stream).
+  """
+  def fullscreen_begin_ram_write(spi) do
+    w = width()
+    h = height()
+    set_window(spi, {0, 0}, {w - 1, h - 1})
+    begin_ram_write(spi)
+    :ok
+  end
+
+  @doc """
+  Draw a tiny touch feedback dot near `{x, y}`.
+  Clamps to screen bounds.
+  """
+  def draw_touch_dot(spi, x, y, {r, g, b} \\ {0x00, 0xFC, 0x00})
+      when is_integer(x) and is_integer(y) do
+    x0 = max(x - 1, 0)
+    y0 = max(y - 1, 0)
+    x1 = min(x + 1, width() - 1)
+    y1 = min(y + 1, height() - 1)
+
+    fill_rect_rgb666(spi, {x0, y0}, {x1 - x0 + 1, y1 - y0 + 1}, {r, g, b})
   end
 
   ## Internals
