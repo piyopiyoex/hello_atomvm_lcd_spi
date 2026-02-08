@@ -132,6 +132,32 @@ Notes:
 - Raw RGB888 bytes (no header), top-left origin
 - Exact size: **480 × 320 × 3 = 460,800 bytes**
 - Place files at the SD card root (e.g. `/sdcard/foo.RGB`)
-- The app picks the first `.RGB` file (sorted)
+- The app picks the first `.RGB` file
   - If none are found, it falls back to `priv/default.rgb`
   - If SD mount fails, it falls back to `priv/default.rgb`
+
+### Convert an image to `.RGB`
+
+Requires `ffmpeg`.
+
+```sh
+./scripts/img2rgb24_480x320.sh INPUT_IMAGE
+```
+
+Default mode is `--fit` (keeps aspect ratio and pads):
+
+```sh
+./scripts/img2rgb24_480x320.sh input.png --fit --bg black -o output.rgb
+```
+
+If you want to force an exact 480x320 stretch (may distort):
+
+```sh
+./scripts/img2rgb24_480x320.sh input.png --stretch -o output.rgb
+```
+
+To replace the built-in fallback image:
+
+```sh
+cp output.rgb priv/default.rgb
+```
